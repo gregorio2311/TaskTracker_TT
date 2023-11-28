@@ -3,14 +3,18 @@ from pymongo import MongoClient
 from werkzeug.security import generate_password_hash, check_password_hash
 from bson import ObjectId
 from flask_cors import CORS
+from pymongo.server_api import ServerApi
 
 app = Flask(__name__)
 CORS(app)
 app.config['SECRET_KEY'] = '2311'
 
 # Configuración de MongoDB
-client = MongoClient('mongodb+srv://greg:2311@app.myezwki.mongodb.net/?retryWrites=true&w=majority')
-db = client['todoapp']
+uri = "mongodb+srv://greg:2311@app.myezwki.mongodb.net/?retryWrites=true&w=majority"
+
+client = MongoClient(uri, server_api=ServerApi('1'))
+
+db = client['app']
 users_collection = db['users']
 tasks_collection = db['tasks']
 
