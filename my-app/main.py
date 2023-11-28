@@ -86,10 +86,17 @@ class Task(UserControl):
         self.update()
 
     def save_clicked(self, e):
-        self.display_task.label = self.edit_name.value
-        self.display_view.visible = True
-        self.edit_view.visible = False
-        self.update()
+        new_title = self.edit_name.value
+        if self.task_data and '_id' in self.task_data:
+            task_id = self.task_data['_id']
+            response = send_request(f"{BACKEND_URL}/tasks/{task_id}", "PUT", {"título": new_title})
+            if response.get('message') == 'Task updated successfully':
+                self.display_task.label = new_title
+                self.display_view.visible = True
+                self.edit_view.visible = False
+                self.update()
+            else:
+                print("Error updating task:", response.get('error', 'Unknown error'))
 
     def status_changed(self, e):
         self.completed = self.display_task.value
