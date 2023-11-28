@@ -10,18 +10,18 @@ from flet import (
 BACKEND_URL = "http://localhost:5000"
 
 def send_request(url, method, data=None):
+    req_data = json.dumps(data).encode("utf-8") if data else None
+    req = urllib.request.Request(url, data=req_data, headers={'Content-Type': 'application/json'}, method=method)
     try:
-        req_data = json.dumps(data).encode("utf-8") if data else None
-        req = urllib.request.Request(url, data=req_data, headers={'Content-Type': 'application/json'}, method=method)
         with urllib.request.urlopen(req) as response:
             return json.loads(response.read().decode())
     except urllib.error.HTTPError as error:
-        print(f"HTTP Error {error.code}: {error.read().decode()}")
+        error_message = error.read().decode()
+        print(f"HTTP Error {error.code}: {error_message}")
+        return {"error": error_message}
     except urllib.error.URLError as error:
         print(f"URL Error: {error.reason}")
-    return None
-
-
+        return {"error": str(error.reason)}
 
 class Task(UserControl):
     def __init__(self, task_name, task_status_change, task_delete, todo_app, task_data=None):
@@ -100,16 +100,16 @@ class Task(UserControl):
             task_id = self.task_data['_id']
             response = send_request(f"{BACKEND_URL}/tasks/{task_id}", "DELETE")
             if response.get('message') == 'Task deleted successfully':
+                # Usar la referencia a TodoApp para llamar a remove_task
                 self.todo_app.remove_task(self)
             else:
                 print("Error deleting task:", response.get('error', 'Unknown error'))
-
 
 class TodoApp(UserControl):
 
     def remove_task(self, task):
         self.tasks.controls.remove(task)
-        self.update_ui()  # Asegurarse de que la interfaz de usuario se actualice después de eliminar la tarea.
+        self.update()
             
     def __init__(self, username):
         super().__init__()
@@ -123,19 +123,6 @@ class TodoApp(UserControl):
             tabs=[Tab(text="all"), Tab(text="active"), Tab(text="completed")],
         )
 
-    def update_ui(self):
-        # Actualizar la interfaz de usuario para reflejar cualquier cambio en la lista de tareas.
-        status = self.filter.tabs[self.filter.selected_index].text
-        visible_tasks = [
-            task for task in self.tasks.controls
-            if (status == "all") or 
-               (status == "active" and not task.display_task.value) or 
-               (status == "completed" and task.display_task.value)
-        ]
-        for task in self.tasks.controls:
-            task.visible = task in visible_tasks
-        self.update()
-        
     def build(self):
         return Column(
             controls=[
@@ -157,33 +144,29 @@ class TodoApp(UserControl):
             alignment="center",
             expand=True
         )
-   
-    def add_task_to_ui(self, task_name, task_id):
-        task_item = Task(task_name, self.task_status_change, self.task_delete, self, task_data={'_id': task_id})
-        self.tasks.controls.append(task_item)
-        self.update_ui()  # Actualizar la interfaz de usuario inmediatamente después de agregar la tarea.
 
     def add_clicked(self, e):
-        task_name = self.new_task.value.strip()
+        task_name = self.new_task.value
         if task_name:
             response = send_request(f"{BACKEND_URL}/tasks", "POST", {"usuario": self.username, "título": task_name})
-            if response and response.get('message') == 'Task added successfully':
-                self.add_task_to_ui(task_name, response['task_id'])
+            if response.get('message') == 'Task added successfully':
+                task_id = response['task_id']
+                # Añade 'self' como argumento al crear la instancia de Task
+                task_item = Task(task_name, self.task_status_change, self.task_delete, self, task_data={'_id': task_id})
+                self.tasks.controls.append(task_item)
                 self.new_task.value = ""
+                self.update()
             else:
-                print("Error adding task:", response.get('error', 'Unknown error') if response else 'No response')
+                print("Error adding task:", response.get('error', 'Unknown error'))
 
     def task_status_change(self, task):
         if task.task_data and '_id' in task.task_data:
             task_id = task.task_data['_id']
-            completed_status = task.completed
-            response = send_request(f"{BACKEND_URL}/tasks/{task_id}", "PATCH", {"completed": completed_status})
-            if response and response.get('message') == 'Task updated successfully':
+            response = send_request(f"{BACKEND_URL}/tasks/{task_id}", "PATCH", {"completed": task.completed})
+            if response.get('message') == 'Task updated successfully':
                 print("Task status updated.")
-                task.display_task.value = completed_status  # Asegúrate de que el Checkbox refleje el nuevo estado.
-                self.update_ui()  # Actualizar la interfaz de usuario inmediatamente después de cambiar el estado.
             else:
-                print("Error updating task status:", response.get('error', 'Unknown error') if response else 'No response')
+                print("Error updating task status:", response.get('error', 'Unknown error'))
 
     def task_delete(self, task):
         self.tasks.controls.remove(task)
@@ -200,17 +183,6 @@ class TodoApp(UserControl):
             )
         super().update()
 
-    def update_ui(self):
-        # Esta función actualizará la visibilidad de las tareas basándose en el estado seleccionado en las pestañas.
-        status = self.filter.tabs[self.filter.selected_index].text
-        for task in self.tasks.controls:
-            task.visible = (
-                status == "all" or
-                (status == "active" and not task.display_task.value) or
-                (status == "completed" and task.display_task.value)
-            )
-        self.update()  # L
-        
     def tabs_changed(self, e):
         self.update()
 
@@ -224,7 +196,7 @@ class TodoApp(UserControl):
                 task_item.display_task.value = task_data.get("completada", False)  # Establecer el Checkbox según el estado de la tarea
                 self.tasks.controls.append(task_item)
             self.update()
-
+            
 class LoginPage(UserControl):
     def __init__(self, on_login_success, on_go_to_register):
         super().__init__()
@@ -233,7 +205,7 @@ class LoginPage(UserControl):
 
     def build(self):
         self.username = TextField(label="Username", autofocus=True)
-        self.password = TextField(label="Password", password=True, can_reveal_password=True)
+        self.password = TextField(label="Password", password=True)
         return Column(
             controls=[
                 self.username,
@@ -295,8 +267,8 @@ class RegisterPage(UserControl):
 
     def build(self):
         self.username = TextField(label="Username")
-        self.password = TextField(label="Password", password=True, can_reveal_password=True)
-        self.confirm_password = TextField(label="Confirm Password", password=True, can_reveal_password=True)
+        self.password = TextField(label="Password", password=True)
+        self.confirm_password = TextField(label="Confirm Password", password=True)
 
         return Column(
             controls=[
