@@ -1,9 +1,28 @@
 import flet
+import json
+import urllib.request
 from flet import (
     Checkbox, Column, FloatingActionButton, IconButton, Page,
-    Row, Tab, Tabs, TextField, UserControl, colors, icons,
+    Row, Tab, Tabs, TextField, UserControl, colors, icons, Text,
 )
 
+# URL del backend de Flask (reemplaza esto con tu URL real del servidor Flask)
+BACKEND_URL = "http://localhost:5000"
+
+def send_request(url, method, data=None):
+    req_data = json.dumps(data).encode("utf-8") if data else None
+    req = urllib.request.Request(url, data=req_data, headers={'Content-Type': 'application/json'}, method=method)
+    try:
+        with urllib.request.urlopen(req) as response:
+            return json.loads(response.read().decode())
+    except urllib.error.HTTPError as error:
+        error_message = error.read().decode()
+        print(f"HTTP Error {error.code}: {error_message}")
+        return {"error": error_message}
+    except urllib.error.URLError as error:
+        print(f"URL Error: {error.reason}")
+        return {"error": str(error.reason)}
+        
 class Task(UserControl):
     def __init__(self, task_name, task_status_change, task_delete):
         super().__init__()
@@ -32,7 +51,7 @@ class Task(UserControl):
                             on_click=self.edit_clicked,
                         ),
                         IconButton(
-                            icons.DELETE_OUTLINE,
+                            icon=icons.DELETE_OUTLINE,
                             tooltip="Delete To-Do",
                             on_click=self.delete_clicked,
                         ),
@@ -78,7 +97,7 @@ class Task(UserControl):
 
 class TodoApp(UserControl):
     def build(self):
-        self.new_task = TextField(hint_text="Whats needs to be done?", expand=True)
+        self.new_task = TextField(hint_text="What needs to be done?", expand=True)
         self.tasks = Column()
 
         self.filter = Tabs(
@@ -115,9 +134,11 @@ class TodoApp(UserControl):
         self.update()
 
     def task_status_change(self, task):
+        # TODO: Aquí deberías enviar una solicitud al backend para actualizar el estado de la tarea
         self.update()
 
     def task_delete(self, task):
+        # TODO: Aquí deberías enviar una solicitud al backend para eliminar la tarea
         self.tasks.controls.remove(task)
         self.update()
 
@@ -141,10 +162,12 @@ class LoginPage(UserControl):
         self.on_go_to_register = on_go_to_register
 
     def build(self):
+        self.username = TextField(label="Username", autofocus=True)
+        self.password = TextField(label="Password", password=True)
         return Column(
             controls=[
-                TextField(label="Username", autofocus=True),
-                TextField(label="Password", password=True),
+                self.username,
+                self.password,
                 Row(
                     controls=[
                         FloatingActionButton(icon=icons.LOGIN, on_click=self.login_clicked, tooltip="Log in"),
@@ -158,7 +181,24 @@ class LoginPage(UserControl):
         )
 
     def login_clicked(self, e):
-        self.on_login_success()
+        username = self.username.value
+        password = self.password.value
+        data = json.dumps({"username": username, "password": password}).encode("utf-8")
+        req = urllib.request.Request(f"{BACKEND_URL}/login", data=data, headers={'Content-Type': 'application/json'}, method='POST')
+        try:
+            with urllib.request.urlopen(req) as response:
+                result = json.loads(response.read().decode())
+                print("Respuesta del servidor al iniciar sesión:", result)  # Imprimir toda la respuesta
+                if result.get('message') == 'Login successful':
+                    # Si el mensaje es de éxito, proceder con el inicio de sesión
+                    self.on_login_success()  # Llamar a esta función si el inicio de sesión es exitoso
+                else:
+                    # Si hay algún otro mensaje, considerarlo como un error de inicio de sesión
+                    print("Error en el inicio de sesión.")
+        except urllib.error.HTTPError as error:
+            print(f"Error al iniciar sesión: {error.read().decode()}")
+        except urllib.error.URLError as error:
+            print(f"Error de URL: {error.reason}")
 
 class RegisterPage(UserControl):
     def __init__(self, on_go_to_login):
@@ -188,8 +228,23 @@ class RegisterPage(UserControl):
         )
 
     def register_clicked(self, e):
-        print(f"Registrando usuario: {self.username.value}, Contraseña: {self.password.value}")
-        self.on_go_to_login()
+        username = self.username.value
+        password = self.password.value
+        confirm_password = self.confirm_password.value
+        if password != confirm_password:
+            print("Passwords do not match.")
+            return
+        data = json.dumps({"username": username, "password": password}).encode("utf-8")
+        req = urllib.request.Request(f"{BACKEND_URL}/register", data=data, headers={'Content-Type': 'application/json'}, method='POST')
+        try:
+            with urllib.request.urlopen(req) as response:
+                result = json.loads(response.read().decode())
+                print("Respuesta del servidor al registrar:", result)  # Imprimir toda la respuesta
+                self.on_go_to_login()  # Regresar a la página de inicio de sesión si el registro es exitoso
+        except urllib.error.HTTPError as error:
+            print(f"Error al registrar: {error.read().decode()}")
+        except urllib.error.URLError as error:
+            print(f"Error de URL: {error.reason}")
 
 def main(page: Page):
     def show_login():
@@ -201,9 +256,6 @@ def main(page: Page):
         page.controls.clear()
         register_page = RegisterPage(on_go_to_login=show_login)
         page.add(register_page)
-
-    # Resto de la función main...
-
 
     def show_app():
         page.controls.clear()
