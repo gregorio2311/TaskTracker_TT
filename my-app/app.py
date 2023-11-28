@@ -11,9 +11,7 @@ app.config['SECRET_KEY'] = '2311'
 
 # Configuración de MongoDB
 uri = "mongodb+srv://greg:2311@app.myezwki.mongodb.net/?retryWrites=true&w=majority"
-
 client = MongoClient(uri, server_api=ServerApi('1'))
-
 db = client['app']
 users_collection = db['users']
 tasks_collection = db['tasks']
@@ -52,18 +50,31 @@ def login():
 
 @app.route('/tasks', methods=['POST'])
 def add_task():
+    # Asumiendo que la autenticación se maneja y que 'username' es el usuario autenticado
     username = request.json['usuario']
     title = request.json['título']
-    tasks_collection.insert_one({'usuario': username, 'título': title, 'completada': False})
-    print(f"Usuario {username} ha añadido una nueva tarea: {title}")
-    return jsonify({'message': 'Task added successfully'}), 201
+    print(f"Añadiendo tarea para {username}: {title}")  # Impresión para depuración
+    try:
+        result = tasks_collection.insert_one({'usuario': username, 'título': title, 'completada': False})
+        print(f"Tarea añadida con ID: {result.inserted_id}")  # Impresión para depuración
+        return jsonify({'message': 'Task added successfully', 'task_id': str(result.inserted_id)}), 201
+    except Exception as e:
+        print(f"Error al añadir tarea: {e}")  # Impresión para depuración
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/tasks', methods=['GET'])
 def get_tasks():
     username = request.args.get('usuario')
     user_tasks = tasks_collection.find({'usuario': username})
+
+    # Convertir ObjectId a string
+    tasks_list = []
+    for task in user_tasks:
+        task['_id'] = str(task['_id'])  # Convertir ObjectId a string
+        tasks_list.append(task)
+
     print(f"Recuperando tareas para el usuario: {username}")
-    return jsonify(list(user_tasks)), 200
+    return jsonify(tasks_list), 200
 
 @app.route('/tasks/<task_id>', methods=['DELETE'])
 def delete_task(task_id):
@@ -74,6 +85,22 @@ def delete_task(task_id):
     else:
         print(f"No se encontró la tarea con ID {task_id} para eliminar.")
         return jsonify({'message': 'Task not found'}), 404
+
+@app.route('/tasks/<task_id>', methods=['PATCH'])
+def update_task(task_id):
+    # Se espera que el cuerpo de la solicitud contenga un campo 'completed'
+    completed = request.json['completed']
+    try:
+        result = tasks_collection.update_one(
+            {'_id': ObjectId(task_id)},
+            {'$set': {'completada': completed}}
+        )
+        if result.modified_count:
+            return jsonify({'message': 'Task updated successfully'}), 200
+        else:
+            return jsonify({'message': 'No changes made to the task'}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
 
 if __name__ == '__main__':
     app.run(debug=True)

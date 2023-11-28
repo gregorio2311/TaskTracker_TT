@@ -22,21 +22,23 @@ def send_request(url, method, data=None):
     except urllib.error.URLError as error:
         print(f"URL Error: {error.reason}")
         return {"error": str(error.reason)}
-        
+
 class Task(UserControl):
-    def __init__(self, task_name, task_status_change, task_delete):
+    def __init__(self, task_name, task_status_change, task_delete, todo_app, task_data=None):
         super().__init__()
         self.completed = False
         self.task_name = task_name
         self.task_status_change = task_status_change
         self.task_delete = task_delete
+        self.task_data = task_data
+        self.todo_app = todo_app
 
-    def build(self):
-        self.display_task = Checkbox(
-            value=False, label=self.task_name, on_change=self.status_changed
-        )
+        self.display_task = Checkbox(value=self.task_data.get("completada", False), label=self.task_name, on_change=self.status_changed)
         self.edit_name = TextField(expand=1)
 
+        self.build()
+
+    def build(self):
         self.display_view = Row(
             alignment="spaceBetween",
             vertical_alignment="center",
@@ -74,6 +76,7 @@ class Task(UserControl):
                 ),
             ],
         )
+
         return Column(controls=[self.display_view, self.edit_view])
 
     def edit_clicked(self, e):
@@ -93,10 +96,24 @@ class Task(UserControl):
         self.task_status_change(self)
 
     def delete_clicked(self, e):
-        self.task_delete(self)
+        if self.task_data and '_id' in self.task_data:
+            task_id = self.task_data['_id']
+            response = send_request(f"{BACKEND_URL}/tasks/{task_id}", "DELETE")
+            if response.get('message') == 'Task deleted successfully':
+                # Usar la referencia a TodoApp para llamar a remove_task
+                self.todo_app.remove_task(self)
+            else:
+                print("Error deleting task:", response.get('error', 'Unknown error'))
 
 class TodoApp(UserControl):
-    def build(self):
+
+    def remove_task(self, task):
+        self.tasks.controls.remove(task)
+        self.update()
+            
+    def __init__(self, username):
+        super().__init__()
+        self.username = username
         self.new_task = TextField(hint_text="What needs to be done?", expand=True)
         self.tasks = Column()
 
@@ -106,6 +123,7 @@ class TodoApp(UserControl):
             tabs=[Tab(text="all"), Tab(text="active"), Tab(text="completed")],
         )
 
+    def build(self):
         return Column(
             controls=[
                 Row(
@@ -128,33 +146,57 @@ class TodoApp(UserControl):
         )
 
     def add_clicked(self, e):
-        task = Task(self.new_task.value, self.task_status_change, self.task_delete)
-        self.tasks.controls.append(task)
-        self.new_task.value = ""
-        self.update()
+        task_name = self.new_task.value
+        if task_name:
+            response = send_request(f"{BACKEND_URL}/tasks", "POST", {"usuario": self.username, "título": task_name})
+            if response.get('message') == 'Task added successfully':
+                task_id = response['task_id']
+                # Añade 'self' como argumento al crear la instancia de Task
+                task_item = Task(task_name, self.task_status_change, self.task_delete, self, task_data={'_id': task_id})
+                self.tasks.controls.append(task_item)
+                self.new_task.value = ""
+                self.update()
+            else:
+                print("Error adding task:", response.get('error', 'Unknown error'))
 
     def task_status_change(self, task):
-        # TODO: Aquí deberías enviar una solicitud al backend para actualizar el estado de la tarea
-        self.update()
+        if task.task_data and '_id' in task.task_data:
+            task_id = task.task_data['_id']
+            response = send_request(f"{BACKEND_URL}/tasks/{task_id}", "PATCH", {"completed": task.completed})
+            if response.get('message') == 'Task updated successfully':
+                print("Task status updated.")
+            else:
+                print("Error updating task status:", response.get('error', 'Unknown error'))
 
     def task_delete(self, task):
-        # TODO: Aquí deberías enviar una solicitud al backend para eliminar la tarea
         self.tasks.controls.remove(task)
         self.update()
 
     def update(self):
         status = self.filter.tabs[self.filter.selected_index].text
         for task in self.tasks.controls:
+            # Asegúrate de que la visibilidad de la tarea sea consistente con su estado actual
             task.visible = (
                 status == "all" or
-                (status == "active" and not task.completed) or
-                (status == "completed" and task.completed)
+                (status == "active" and not task.display_task.value) or
+                (status == "completed" and task.display_task.value)
             )
         super().update()
 
     def tabs_changed(self, e):
         self.update()
 
+    def show_tasks(self):
+        response = send_request(f"{BACKEND_URL}/tasks?usuario={self.username}", "GET")
+        if response:
+            self.tasks.controls.clear()
+            for task_data in response:
+                # Usa el estado 'completada' para establecer el valor del Checkbox
+                task_item = Task(task_data['título'], self.task_status_change, self.task_delete, self, task_data=task_data)
+                task_item.display_task.value = task_data.get("completada", False)  # Establecer el Checkbox según el estado de la tarea
+                self.tasks.controls.append(task_item)
+            self.update()
+            
 class LoginPage(UserControl):
     def __init__(self, on_login_success, on_go_to_register):
         super().__init__()
@@ -194,6 +236,24 @@ class LoginPage(UserControl):
                     self.on_login_success()  # Llamar a esta función si el inicio de sesión es exitoso
                 else:
                     # Si hay algún otro mensaje, considerarlo como un error de inicio de sesión
+                    print("Error en el inicio de sesión.")
+        except urllib.error.HTTPError as error:
+            print(f"Error al iniciar sesión: {error.read().decode()}")
+        except urllib.error.URLError as error:
+            print(f"Error de URL: {error.reason}")
+
+    def login_clicked(self, e):
+        username = self.username.value
+        password = self.password.value
+        data = json.dumps({"username": username, "password": password}).encode("utf-8")
+        req = urllib.request.Request(f"{BACKEND_URL}/login", data=data, headers={'Content-Type': 'application/json'}, method='POST')
+        try:
+            with urllib.request.urlopen(req) as response:
+                result = json.loads(response.read().decode())
+                print("Respuesta del servidor al iniciar sesión:", result)
+                if result.get('message') == 'Login successful':
+                    self.on_login_success(username)  # Pasar el nombre de usuario a la función de éxito
+                else:
                     print("Error en el inicio de sesión.")
         except urllib.error.HTTPError as error:
             print(f"Error al iniciar sesión: {error.read().decode()}")
@@ -257,10 +317,11 @@ def main(page: Page):
         register_page = RegisterPage(on_go_to_login=show_login)
         page.add(register_page)
 
-    def show_app():
+    def show_app(username):
         page.controls.clear()
-        todo_app = TodoApp()
+        todo_app = TodoApp(username)
         page.add(todo_app)
+        todo_app.show_tasks()
 
     show_login()
 
