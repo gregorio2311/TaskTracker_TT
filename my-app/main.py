@@ -70,7 +70,6 @@ class Task(UserControl):
                 self.edit_name,
                 IconButton(
                     icon=icons.DONE_OUTLINE_OUTLINED,
-                    icon_color=colors.GREEN,
                     tooltip="Update To-Do",
                     on_click=self.save_clicked,
                 ),
@@ -212,7 +211,7 @@ class LoginPage(UserControl):
 
     def build(self):
         self.username = TextField(label="Username", autofocus=True)
-        self.password = TextField(label="Password", password=True)
+        self.password = TextField(label="Password", password=True, can_reveal_password=True)
         return Column(
             controls=[
                 self.username,
@@ -228,26 +227,6 @@ class LoginPage(UserControl):
             alignment="center",
             expand=True
         )
-
-    def login_clicked(self, e):
-        username = self.username.value
-        password = self.password.value
-        data = json.dumps({"username": username, "password": password}).encode("utf-8")
-        req = urllib.request.Request(f"{BACKEND_URL}/login", data=data, headers={'Content-Type': 'application/json'}, method='POST')
-        try:
-            with urllib.request.urlopen(req) as response:
-                result = json.loads(response.read().decode())
-                print("Respuesta del servidor al iniciar sesión:", result)  # Imprimir toda la respuesta
-                if result.get('message') == 'Login successful':
-                    # Si el mensaje es de éxito, proceder con el inicio de sesión
-                    self.on_login_success()  # Llamar a esta función si el inicio de sesión es exitoso
-                else:
-                    # Si hay algún otro mensaje, considerarlo como un error de inicio de sesión
-                    print("Error en el inicio de sesión.")
-        except urllib.error.HTTPError as error:
-            print(f"Error al iniciar sesión: {error.read().decode()}")
-        except urllib.error.URLError as error:
-            print(f"Error de URL: {error.reason}")
 
     def login_clicked(self, e):
         username = self.username.value
@@ -274,8 +253,8 @@ class RegisterPage(UserControl):
 
     def build(self):
         self.username = TextField(label="Username")
-        self.password = TextField(label="Password", password=True)
-        self.confirm_password = TextField(label="Confirm Password", password=True)
+        self.password = TextField(label="Password", password=True, can_reveal_password=True)
+        self.confirm_password = TextField(label="Confirm Password", password=True, can_reveal_password=True)
 
         return Column(
             controls=[
