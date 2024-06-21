@@ -9,11 +9,11 @@ from pymongo.server_api import ServerApi
 app = Flask(__name__)
 CORS(app)
 # Clave secreta de la aplicación para mantener la seguridad de las sesiones
-app.config['SECRET_KEY'] = '2311'
+app.config['SECRET_KEY'] = '****'
 
 # Conectar a la base de datos MongoDB utilizando la URI proporcionada
 client = MongoClient(
-    "mongodb+srv://greg:2311@app.myezwki.mongodb.net/?retryWrites=true&w=majority",
+    "mongodb+srv://******@app.myezwki.mongodb.net/?retryWrites=true&w=majority",
     server_api=ServerApi('1')
 )
 db = client['app']
